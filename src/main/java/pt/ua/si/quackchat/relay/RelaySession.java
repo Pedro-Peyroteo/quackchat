@@ -7,6 +7,7 @@ import pt.ua.si.quackchat.shared.protocol.ProtocolConfig;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.Socket;
 
@@ -48,13 +49,18 @@ public final class RelaySession {
                 DataInputStream in = new DataInputStream(conn.getInputStream());
                 DataOutputStream out = new DataOutputStream(conn.getOutputStream())
         ) {
-            Frame request = FrameCodec.read(in);
-            if (request.type() != MessageType.PING || request.payload().length != 0) {
-                throw new IOException("Expected an empty PING frame");
-            }
+            while (true) {
+                Frame request = FrameCodec.read(in);
 
-            FrameCodec.write(out, new Frame(MessageType.PONG, new byte[0]));
-            out.flush();
+                if (request.type() != MessageType.PING || request.payload().length != 0) {
+                    throw new IOException("Expected an empty PING frame");
+                }
+
+                FrameCodec.write(out, new Frame(MessageType.PONG, new byte[0]));
+                out.flush();
+            }
+        } catch (EOFException e) {
+            // The incoming stream ended. Finish this session.
         }
     }
 }

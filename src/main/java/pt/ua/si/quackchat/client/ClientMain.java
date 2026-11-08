@@ -49,26 +49,28 @@ public class ClientMain {
             ) {
                 System.out.println("[*] Connected to relay");
 
-                // Create a PING frame with an empty payload.
-                Frame request = new Frame(MessageType.PING, new byte[0]);
-                FrameCodec.write(out, request);
-                out.flush();
+                // Send 2 PINGs over the same connection. TEMP - For testing.
+                for (int exchange = 1; exchange <= 2; exchange++) {
+                    // Create a PING frame with an empty payload.
+                    FrameCodec.write(out, new Frame(MessageType.PING, new byte[0]));
+                    out.flush();
+                    System.out.println("[*] Sent PING");
 
-                System.out.println("[*] Sent PING");
+                    // Wait for and decode one response frame.
+                    Frame response = FrameCodec.read(in);
 
-                // Wait for and decode one response frame.
-                Frame response = FrameCodec.read(in);
+                    // Validate if the relay returned the expected response.
+                    if(response.type() != MessageType.PONG || response.payload().length != 0) {
+                        throw new IOException("Expected an empty PONG frame");
+                    }
 
-                // Validate if the relay returned the expected response.
-                if(response.type() != MessageType.PONG || response.payload().length != 0) {
-                    throw new IOException("Expected an empty PONG frame");
+                    System.out.println("[*] Received PONG (" + exchange + "/2)");
                 }
-
-                System.out.println("[*] Received PONG");
             }
         }
         // The socket and its streams are closed.
     }
+
 /**
  * Parses and validates a port number.
  *
