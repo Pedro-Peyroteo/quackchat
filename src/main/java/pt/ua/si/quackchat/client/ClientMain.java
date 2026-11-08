@@ -3,47 +3,93 @@ package pt.ua.si.quackchat.client;
 import pt.ua.si.quackchat.shared.protocol.Frame;
 import pt.ua.si.quackchat.shared.protocol.FrameCodec;
 import pt.ua.si.quackchat.shared.protocol.MessageType;
+import pt.ua.si.quackchat.shared.protocol.ProtocolConfig;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 
-/**
- * TODO:
- * - Read socket host and port from config or params
- * -
- */
-
 public class ClientMain {
+
+    /**
+     * Starts the client application and performs a single PING/PONG
+     * exchange with a relay server.
+     *
+     * The first optional argument specifies the relay host and the
+     * second optional argument specifies the relay port.
+     *
+     * @param args command-line arguments in the form
+     *             {@code [host] [port]}
+     * @throws IOException if a network error occurs, a timeout is reached,
+     *                     or the relay returns an invalid response
+     * @throws IllegalArgumentException if too many arguments are supplied
+     *                                  or the specified port is invalid
+     */
     public static void main(String[] args) throws IOException {
-        try (
-                // Connect to the relay on this computer.
-                Socket conn = new Socket("localhost", 5000);
+        if (args.length > 2) {
+            throw new IllegalArgumentException("Usage: ClientMain [host] [port]");
+        }
 
-                // Wrap the connection's incoming and outgoing bytes.
-                DataInputStream in = new DataInputStream(conn.getInputStream());
-                DataOutputStream out = new DataOutputStream(conn.getOutputStream())
-        ){
-            System.out.println("[*] Connected to relay");
+        String host = args.length >= 1 ? args[0] : ProtocolConfig.DEFAULT_RELAY_HOST;
+        int port = args.length == 2 ? parsePort(args[1]) : ProtocolConfig.DEFAULT_RELAY_PORT;
 
-            // Create a PING frame with an empty payload.
-            Frame request = new Frame(MessageType.PING, new byte[0]);
-            FrameCodec.write(out, request);
-            out.flush();
+        try (Socket conn = new Socket()) {
+            conn.connect(
+                    new InetSocketAddress(host, port),
+                    ProtocolConfig.CONNECT_TIMEOUT_MILLIS
+            );
+            conn.setSoTimeout(ProtocolConfig.READ_TIMEOUT_MILLIS);
 
-            System.out.println("[*] Sent PING");
+            try (
+                    // Wrap the connection's incoming and outgoing bytes.
+                    DataInputStream in = new DataInputStream(conn.getInputStream());
+                    DataOutputStream out = new DataOutputStream(conn.getOutputStream())
+            ) {
+                System.out.println("[*] Connected to relay");
 
-            // Wait for and decode one response frame.
-            Frame response = FrameCodec.read(in);
+                // Create a PING frame with an empty payload.
+                Frame request = new Frame(MessageType.PING, new byte[0]);
+                FrameCodec.write(out, request);
+                out.flush();
 
-            // Validate if the relay returned the expected response.
-            if(response.type() != MessageType.PONG || response.payload().length != 0) {
-                throw new IOException("Expected an empty PONG frame");
+                System.out.println("[*] Sent PING");
+
+                // Wait for and decode one response frame.
+                Frame response = FrameCodec.read(in);
+
+                // Validate if the relay returned the expected response.
+                if(response.type() != MessageType.PONG || response.payload().length != 0) {
+                    throw new IOException("Expected an empty PONG frame");
+                }
+
+                System.out.println("[*] Received PONG");
             }
-
-            System.out.println("[*] Received PONG");
         }
         // The socket and its streams are closed.
+    }
+/**
+ * Parses and validates a port number.
+ *
+ * The port must be a numeric value in the valid TCP/UDP port
+ * range from 1 to 65535.
+ *
+ * @param value the port number as a string
+ * @return the validated port number
+ * @throws IllegalArgumentException if the supplied value is not
+ *                                  numeric or falls outside the
+ *                                  valid port range
+ */
+    private static int parsePort(String value) {
+        try {
+            int port = Integer.parseInt(value);
+            if (port < 1 || port > 65_535) {
+                throw new IllegalArgumentException("Port must be between 1 and 65535");
+            }
+            return port;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Port must be a number between 1 and 65535", e);
+        }
     }
 }
