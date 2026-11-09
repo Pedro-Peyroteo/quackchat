@@ -40,11 +40,10 @@ public class ClientMain {
      * @throws GeneralSecurityException if client key generation fails
      */
     public static void main(String[] args) throws IOException, GeneralSecurityException {
-        // Accept and optional host, port and client identity.
-        // Accept an optional host, port, client identity and contact to discover.
-        if (args.length > 4) {
+        // Accept an optional host, port, identity, contact and message.
+        if (args.length > 5) {
             throw new IllegalArgumentException(
-                    "Usage: ClientMain [host] [port] [identity] [contact]");
+                    "Usage: ClientMain [host] [port] [identity] [contact] [message]");
         }
 
         String host = args.length >= 1
@@ -52,7 +51,12 @@ public class ClientMain {
         int port = args.length >= 2
                 ? parsePort(args[1]) : ProtocolConfig.DEFAULT_RELAY_PORT;
         String identity = args.length >= 3 ? args[2] : "alice";
-        String contact = args.length == 4 ? args[3] : null;
+        String contact = args.length >= 4 ? args[3] : null;
+
+        // Preserve the existing greeting when no message argument is supplied.
+        String messageText = args.length == 5
+                ? args[4]
+                : "Hello, " + contact + "!";
 
         // Validate and prepare the optional lookup before opening the connection.
         byte[] discoveryPayload =
@@ -198,9 +202,8 @@ public class ClientMain {
                     System.out.println("[*] Contact credential issued at "
                             + contactCredential.issuedAt());
 
-                    // Prepare one message for the contact whose credential was just verified.
-                    // TODO: Remove hardcoded plaintext.
-                    byte[] plaintext = ("Hello, " + contact + "!").getBytes(StandardCharsets.UTF_8);
+                    // Encode the selected message as UTF-8 before protecting it.
+                    byte[] plaintext = messageText.getBytes(StandardCharsets.UTF_8);
 
                     // Encrypt for the recipient and sign using this client's signing key.
                     // credentialPayload is the credential received during registration.
