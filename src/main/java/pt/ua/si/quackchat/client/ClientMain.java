@@ -160,13 +160,20 @@ public class ClientMain {
                         + credential.registration().identity());
                 System.out.println("[*] Credential issued at " + credential.issuedAt());
 
+                // Keep the registered connection open while waiting for incoming messages.
+                conn.setSoTimeout(0);
+
+                ClientInbox inbox = new ClientInbox(
+                        identity, encryptionKeys.getPrivate(), trustedRelayKey);
+
                 if (discoveryPayload != null) {
                     // Ask for the contact's registered credential.
                     FrameCodec.write(out, new Frame(
                             MessageType.DISCOVER_REQUEST, discoveryPayload));
                     out.flush();
 
-                    Frame discoveryResult = FrameCodec.read(in);
+                    // Process incoming deliveries if they arrive before the discovery response.
+                    Frame discoveryResult = inbox.readResponse(in);
 
                     if (discoveryResult.type() == MessageType.ERROR) {
                         throw new IOException("Discovery failed: "
@@ -190,7 +197,38 @@ public class ClientMain {
                             + contactCredential.registration().identity());
                     System.out.println("[*] Contact credential issued at "
                             + contactCredential.issuedAt());
+
+                    // Prepare one message for the contact whose credential was just verified.
+                    // TODO: Remove hardcoded plaintext.
+                    byte[] plaintext = ("Hello, " + contact + "!").getBytes(StandardCharsets.UTF_8);
+
+                    // Encrypt for the recipient and sign using this client's signing key.
+                    // credentialPayload is the credential received during registration.
+                    byte[] messagePayload = MessageCodec.protect(
+                            identity,
+                            contact,
+                            plaintext,
+                            credentialPayload,
+                            signingKeys.getPrivate(),
+                            contactCredential.registration().encryptionPublicKey()
+                    );
+
+                    // Display the prepared message identifier and encoded size.
+                    MessageCodec.Header messageHeader = MessageCodec.readHeader(messagePayload);
+                    System.out.println("[*] Prepared protected message "
+                            + messageHeader.messageId() + " for " + contact
+                            + " (" + messagePayload.length + " bytes)");
+
+                    // Submit the protected envelope to the relay for forwarding.
+                    FrameCodec.write(out, new Frame(MessageType.SEND_MESSAGE, messagePayload));
+                    out.flush();
+
+                    System.out.println("[*] Sent protected message to relay");
                 }
+
+                // Both senders and recipients remain available for incoming messages.
+                System.out.println("[*] Waiting for messages; press Ctrl+C to stop");
+                inbox.listen(in);
             }
         }
         // The socket and its streams are closed.

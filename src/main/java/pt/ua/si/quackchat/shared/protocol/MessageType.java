@@ -27,7 +27,13 @@ public enum MessageType {
     DISCOVER_REQUEST(8),
 
     // Return the original relay-signed credential.
-    DISCOVER_RESPONSE(9);
+    DISCOVER_RESPONSE(9),
+
+    // Submit a protected message for forwarding.
+    SEND_MESSAGE(10),
+
+    // Deliver the original protected message to its recipient.
+    DELIVER_MESSAGE(11);
 
     // Store the code that belongs to this enum constant.
     // final prevents reassignment after construction.

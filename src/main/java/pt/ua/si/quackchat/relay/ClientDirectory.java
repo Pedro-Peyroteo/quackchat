@@ -10,6 +10,10 @@ public final class ClientDirectory {
     private final ConcurrentMap<String, byte[]> credentials =
             new ConcurrentHashMap<>();
 
+    // Track active connections separately from stored credentials.
+    private final ConcurrentMap<String, ClientConnection> online =
+            new ConcurrentHashMap<>();
+
     /**
      * Stores a credential only if the identity is not already registered.
      *
@@ -38,4 +42,25 @@ public final class ClientDirectory {
         return credentialPayload == null ? null : credentialPayload.clone();
     }
 
+    /**
+     * Associates a successfully registered identity with its live connection.
+     */
+    public void markOnline(String identity, ClientConnection connection) {
+        online.put(identity, connection);
+    }
+
+    /**
+     * Finds an active connection, or returns null if the client is offline.
+     */
+    public ClientConnection findOnline(String identity) {
+        return online.get(identity);
+    }
+
+    /**
+     * Removes this connection without deleting the registered credential.
+     */
+    public void markOffline(String identity, ClientConnection connection) {
+        // Remove only if this exact connection is still associated with the identity.
+        online.remove(identity, connection);
+    }
 }

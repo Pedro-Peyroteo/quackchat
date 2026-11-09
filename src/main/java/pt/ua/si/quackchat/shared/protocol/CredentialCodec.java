@@ -19,7 +19,7 @@ public final  class CredentialCodec {
     private static final int SIGNATURE_BYTES = 64;
 
     // Fixed context, issuance time, bounded registration and signature.
-    private static final int MAX_PAYLOAD_BYTES =
+    static final int MAX_PAYLOAD_BYTES =
             CONTEXT.length + Long.BYTES
                     + RegistrationCodec.MAX_REQUEST_BYTES + SIGNATURE_BYTES;
 

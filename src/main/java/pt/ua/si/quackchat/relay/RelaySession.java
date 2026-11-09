@@ -53,10 +53,17 @@ public final class RelaySession {
             throws IOException {
         conn.setSoTimeout(ProtocolConfig.READ_TIMEOUT_MILLIS);
 
+        // Keep enough state to remove the live connection when this session ends.
+        ClientConnection clientConnection = null;
+        String registeredIdentity = null;
+
         try (
                 DataInputStream in = new DataInputStream(conn.getInputStream());
                 DataOutputStream out = new DataOutputStream(conn.getOutputStream())
         ) {
+            // All responses and forwarded messages share this synchronized writer.
+            clientConnection = new ClientConnection(out);
+
             // Keep the pending registration and challenge with this connection.
             RegisterRequest pendingRegistration = null;
             byte[] pendingRegistrationPayload = null;
@@ -77,7 +84,7 @@ public final class RelaySession {
                             throw new IOException("Expected an empty PING frame");
                         }
 
-                        FrameCodec.write(out, new Frame(MessageType.PONG, new byte[0]));
+                        clientConnection.send(new Frame(MessageType.PONG, new byte[0]));
                     }
 
                     case REGISTER_REQUEST -> {
@@ -95,7 +102,7 @@ public final class RelaySession {
                         RANDOM.nextBytes(pendingChallenge);
 
                         // Return the challenge bytes to the client.
-                        FrameCodec.write(out, new Frame(MessageType.REGISTER_CHALLENGE, pendingChallenge));
+                        clientConnection.send(new Frame(MessageType.REGISTER_CHALLENGE, pendingChallenge));
 
                         System.out.println("[*] Challenge for "
                                 + pendingRegistration.identity() + " = "
@@ -153,21 +160,29 @@ public final class RelaySession {
                         // Reserve the identity before returning a successful registration.
                         if (!directory.register(
                                 verifiedRegistration.identity(), credentialPayload)) {
-                            FrameCodec.write(out, new Frame(
+                            clientConnection.send(new Frame(
                                     MessageType.ERROR,
                                     "Identity already registered".getBytes(StandardCharsets.UTF_8)));
 
-                            // Send the rejection before closing this session.
-                            out.flush();
                             return;
                         }
 
                         System.out.println("[*] Stored credential for "
                                 + verifiedRegistration.identity());
 
-                        // Return the signed credential as the registration result.
-                        FrameCodec.write(out,
-                                new Frame(MessageType.REGISTER_SUCCESS, credentialPayload));
+                        registeredIdentity = verifiedRegistration.identity();
+
+                        // Publish the connection while holding its writer lock.
+                        // Forwarding threads must wait until REGISTER_SUCCESS has been sent.
+                        synchronized (clientConnection) {
+                            directory.markOnline(registeredIdentity, clientConnection);
+
+                            clientConnection.send(new Frame(
+                                    MessageType.REGISTER_SUCCESS, credentialPayload));
+                        }
+
+                        // Registered clients may remain idle while waiting for messages.
+                        conn.setSoTimeout(0);
 
                         System.out.println("[*] Issued credential for "
                                 + verifiedRegistration.identity());
@@ -186,26 +201,62 @@ public final class RelaySession {
                         byte[] targetCredential = directory.find(targetIdentity);
 
                         if (targetCredential == null) {
-                            FrameCodec.write(out, new Frame(
-                                    MessageType.ERROR,
+                            clientConnection.send(new Frame(MessageType.ERROR,
                                     "Identity not found".getBytes(StandardCharsets.UTF_8)));
                         } else {
-                            FrameCodec.write(out, new Frame(
-                                    MessageType.DISCOVER_RESPONSE, targetCredential));
+                            clientConnection.send(new Frame(MessageType.DISCOVER_RESPONSE, targetCredential));
 
                             System.out.println("[*] Returned credential for "
                                     + targetIdentity + " to " + verifiedRegistration.identity());
                         }
                     }
+                    case SEND_MESSAGE -> {
+                        if (registeredIdentity == null) {
+                            throw new IOException("Register before sending messages");
+                        }
 
+                        // Read routing metadata, the recipient independently authenticates it.
+                        MessageCodec.Header header = MessageCodec.readHeader(request.payload());
+
+                        // Bind the claimed sender to the identity registered on this connection.
+                        if (!registeredIdentity.equals(header.sender())) {
+                            throw new IOException("Message sender does not match this connection");
+                        }
+
+                        ClientConnection recipient = directory.findOnline(header.recipient());
+
+                        if (recipient == null) {
+                            clientConnection.send(new Frame(
+                                    MessageType.ERROR,
+                                    "Recipient is offline".getBytes(StandardCharsets.UTF_8)));
+                        } else {
+                            try {
+                                // Forward the original payload without decrypting or re-encoding it.
+                                recipient.send(new Frame(
+                                        MessageType.DELIVER_MESSAGE, request.payload()));
+
+                                System.out.println("[*] Forwarded message "
+                                        + header.messageId() + " from " + header.sender()
+                                        + " to " + header.recipient());
+                            } catch (IOException e) {
+                                directory.markOffline(header.recipient(), recipient);
+
+                                clientConnection.send(new Frame(
+                                        MessageType.ERROR,
+                                        "Could not forward message".getBytes(StandardCharsets.UTF_8)));
+                            }
+                        }
+                    }
                     default -> throw new IOException("Unexpected message type: " + request.type());
                 }
-
-                // Send the response before waiting for the next frame.
-                out.flush();
             }
         } catch (EOFException e) {
             // The incoming stream ended. Finish this session.
+        } finally {
+            if (registeredIdentity != null) {
+                directory.markOffline(registeredIdentity, clientConnection);
+                System.out.println("[*] Client offline: " + registeredIdentity);
+            }
         }
     }
 }
