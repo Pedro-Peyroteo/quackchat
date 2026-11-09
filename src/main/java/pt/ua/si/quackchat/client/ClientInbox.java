@@ -8,6 +8,7 @@ import pt.ua.si.quackchat.shared.protocol.MessageType;
 import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.IOException;
+import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.PrivateKey;
@@ -76,7 +77,10 @@ public class ClientInbox {
                 }
             }
         } catch (EOFException e) {
-            System.out.println("[*] Relay closed the connection");
+            System.out.println("[!] Relay closed the connection");
+        } catch (SocketException e) {
+            // End listening after an abrupt disconnect, preserving the reason.
+            System.out.println("[!] Relay connection ended: " + e.getMessage());
         }
     }
 
