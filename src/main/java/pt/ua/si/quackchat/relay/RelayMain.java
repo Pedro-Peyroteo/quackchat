@@ -2,6 +2,14 @@ package pt.ua.si.quackchat.relay;
 
 import pt.ua.si.quackchat.shared.protocol.ProtocolConfig;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.GeneralSecurityException;
+import java.security.Key;
+import java.security.KeyStore;
+import java.security.PrivateKey;
+import java.util.Arrays;
 
 /**
  * Entry point for the QuackChat Relay service.
@@ -29,17 +37,52 @@ public class RelayMain {
      * @throws IllegalArgumentException if more than one argument is
      *                                  supplied or if the port is invalid
      */
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, GeneralSecurityException {
         if (args.length > 1) {
             throw new IllegalArgumentException("Usage: RelayMain [port]");
         }
 
         int port = args.length == 1 ? parsePort(args[0]) : ProtocolConfig.DEFAULT_RELAY_PORT;
-        try (RelayServer relay = new RelayServer(port)) {
+
+        // Read the local keystore password from the relay's run configuration.
+        String configuredPassword =
+                System.getenv("QUACKCHAT_RELAY_KEYSTORE_PASSWORD");
+        if (configuredPassword == null || configuredPassword.isEmpty()) {
+            throw new IllegalStateException(
+                    "Set QUACKCHAT_RELAY_KEYSTORE_PASSWORD before starting the relay");
+        }
+
+        char[] password = configuredPassword.toCharArray();
+        PrivateKey relaySigningKey;
+
+        try {
+            // Load the persistent relay identity.
+            // Use the JDK-supported PKCS#12 format to persist the relay's
+            // private key and certificate in a password-protected keystore.
+            KeyStore keyStore = KeyStore.getInstance("PKCS12");
+            try (InputStream keyInput =
+                         Files.newInputStream(Path.of("keys/relay.p12"))) {
+                keyStore.load(keyInput, password);
+            }
+
+            // Retrieve the private key stored under the provisioning alias.
+            Key storedKey = keyStore.getKey("relay", password);
+            if (!(storedKey instanceof PrivateKey privateKey)) {
+                throw new IOException("Relay signing key is missing");
+            }
+
+            relaySigningKey = privateKey;
+        } finally {
+            // Clear the temporary password character array.
+            Arrays.fill(password, '\0');
+        }
+
+        try (RelayServer relay = new RelayServer(port, relaySigningKey)) {
             System.out.println("[*] Relay listening on port " + relay.port());
             relay.serve();
         }
     }
+
     /**
      * Parses and validates a port number.
      *

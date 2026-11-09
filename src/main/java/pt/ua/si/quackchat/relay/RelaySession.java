@@ -9,6 +9,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.net.Socket;
 import java.security.GeneralSecurityException;
+import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.util.HexFormat;
 
@@ -47,7 +48,7 @@ public final class RelaySession {
      *                     frames, if a timeout occurs, or if the received
      *                     frame is not a valid empty PING request
      */
-    public static void handle(Socket conn) throws IOException {
+    public static void handle(Socket conn, PrivateKey relaySigningKey) throws IOException {
         conn.setSoTimeout(ProtocolConfig.READ_TIMEOUT_MILLIS);
 
         try (
@@ -136,6 +137,22 @@ public final class RelaySession {
                         pendingRegistrationPayload = null;
 
                         System.out.println("[*] Registration proof verified for "
+                                + verifiedRegistration.identity());
+
+                        // Issue a credential only after the client's proof has been verified.
+                        byte[] credentialPayload;
+                        try {
+                            credentialPayload = CredentialCodec.issue(
+                                    verifiedRegistration, relaySigningKey);
+                        } catch (GeneralSecurityException e) {
+                            throw new IOException("Could not sign registration credential", e);
+                        }
+
+                        // Return the signed credential as the registration result.
+                        FrameCodec.write(out,
+                                new Frame(MessageType.REGISTER_SUCCESS, credentialPayload));
+
+                        System.out.println("[*] Issued credential for "
                                 + verifiedRegistration.identity());
 
                     }

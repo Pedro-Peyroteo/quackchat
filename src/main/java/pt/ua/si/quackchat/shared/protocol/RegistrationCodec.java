@@ -20,7 +20,7 @@ public class RegistrationCodec {
     //   Two public-key fields: up to 2 * 1,024 bytes.
     //   Total: 12 + 64 + 2,048 = 2,124 bytes.
     // Actual requests may be smaller.
-    private static final int MAX_REQUEST_BYTES = 3 * Integer.BYTES + MAX_IDENTITY_BYTES + 2 * MAX_PUBLIC_KEY_BYTES;
+    static final int MAX_REQUEST_BYTES = 3 * Integer.BYTES + MAX_IDENTITY_BYTES + 2 * MAX_PUBLIC_KEY_BYTES;
 
     // Identify the protocol operation these signatures belong to.
     private static final byte[] PROOF_CONTEXT  = "QuackChat:registration-proof:v1".getBytes(StandardCharsets.UTF_8);

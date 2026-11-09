@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.security.PrivateKey;
+import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -19,7 +21,13 @@ public final class RelayServer implements AutoCloseable {
     private final ServerSocket listener;
     private final ThreadPoolExecutor workers;
 
-    public RelayServer(int port) throws IOException {
+    // Shared relay identity used to sign client credentials.
+    private final PrivateKey relaySigningKey;
+
+    public RelayServer(int port, PrivateKey relaySigningKey) throws IOException {
+        this.relaySigningKey =
+                Objects.requireNonNull(relaySigningKey, "relaySigningKey");
+
         listener = new ServerSocket(port);  //  Socket created to listen Server | Wait for new connections
         workers = new ThreadPoolExecutor(
                 ProtocolConfig.MAX_CLIENT_WORKERS,  // ProtocolConfig.java import (8)
@@ -30,6 +38,7 @@ public final class RelayServer implements AutoCloseable {
                 new ThreadPoolExecutor.AbortPolicy()    //  Abort when all workers busy
         );
     }
+
 /**
  * 
  * @return Port
@@ -61,7 +70,7 @@ public final class RelayServer implements AutoCloseable {
 
     /*  Workers Func */
     /**
-    * When thread pool and it's queue are full, AbortPolicy runs RejectedExecutionException
+    * When thread pool, and it's queue are full, AbortPolicy runs RejectedExecutionException
     * @param client
     */
     private void dispatch(Socket client) {
@@ -81,10 +90,10 @@ public final class RelayServer implements AutoCloseable {
      * Every Client Socket might be accepted
      * @param client
      */
-    private static void handle(Socket client) {
+    private void handle(Socket client) {
         try (Socket connection = client) {
             System.out.println("[*] Client connected: " + connection.getRemoteSocketAddress());
-            RelaySession.handle(connection);
+            RelaySession.handle(connection, relaySigningKey);
         } catch (IOException e) {
             System.err.println("[!] Client session failed: " + e);
         }

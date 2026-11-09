@@ -7,10 +7,17 @@ import pt.ua.si.quackchat.shared.protocol.*;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.security.KeyPair;
+import java.security.PublicKey;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+import java.util.Arrays;
 import java.util.HexFormat;
 
 public class ClientMain {
@@ -40,6 +47,19 @@ public class ClientMain {
         String host = args.length >= 1 ? args[0] : ProtocolConfig.DEFAULT_RELAY_HOST;
         int port = args.length >= 2 ? parsePort(args[1]) : ProtocolConfig.DEFAULT_RELAY_PORT;
         String identity = args.length == 3 ? args[2] : "alice";
+
+        // Read the relay public key from the X.509 certificate exported by keytool.
+        // Trust comes from provisioning this file through a trusted setup channel.
+        PublicKey trustedRelayKey;
+        try (InputStream certificateInput =
+                     Files.newInputStream(Path.of("keys/relay.cer"))) {
+            CertificateFactory factory = CertificateFactory.getInstance("X.509");
+            X509Certificate certificate =
+                    (X509Certificate) factory.generateCertificate(certificateInput);
+
+            certificate.checkValidity();
+            trustedRelayKey = certificate.getPublicKey();
+        }
 
         // Generate the client's signing and encryption key pairs.
         KeyPair signingKeys = Signatures.generateKeyPair();
@@ -99,6 +119,29 @@ public class ClientMain {
 
                 System.out.println("[*] Sent registration proof ("
                         + proofSignature.length + ") bytes");
+
+                // Wait for the signed credential returned after proof verification.
+                Frame result = FrameCodec.read(in);
+                if (result.type() != MessageType.REGISTER_SUCCESS) {
+                    throw new IOException("Expected registration success");
+                }
+
+                // Keep the signed payload and verify it with the previously trusted relay key.
+                byte[] credentialPayload = result.payload();
+                Credential credential =
+                        CredentialCodec.verify(credentialPayload, trustedRelayKey);
+
+                // Ensure the relay certified the identity and keys this client submitted.
+                byte[] certifiedRegistration =
+                        RegistrationCodec.encodeRequest(credential.registration());
+
+                if (!Arrays.equals(certifiedRegistration, registrationPayload)) {
+                    throw new IOException("Credential does not match our registration");
+                }
+
+                System.out.println("[*] Verified relay credential for "
+                        + credential.registration().identity());
+                System.out.println("[*] Credential issued at " + credential.issuedAt());
             }
         }
         // The socket and its streams are closed.
