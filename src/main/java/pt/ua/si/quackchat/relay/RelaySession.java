@@ -13,6 +13,7 @@ import java.security.GeneralSecurityException;
 import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.util.HexFormat;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Handles a single relay protocol session with a connected client.
@@ -72,6 +73,9 @@ public final class RelaySession {
             // Keep the registration whose signing-key ownership has been verified.
             RegisterRequest verifiedRegistration = null;
 
+            // Track challenge age using a monotonic clock.
+            long pendingChallengeIssuedAtNanos = 0;
+
             while (true) {
                 Frame request = FrameCodec.read(in);
 
@@ -101,6 +105,8 @@ public final class RelaySession {
                         pendingChallenge = new byte[ProtocolConfig.REGISTRATION_CHALLENGE_BYTES];
                         RANDOM.nextBytes(pendingChallenge);
 
+                        pendingChallengeIssuedAtNanos = System.nanoTime();
+
                         // Return the challenge bytes to the client.
                         clientConnection.send(new Frame(MessageType.REGISTER_CHALLENGE, pendingChallenge));
 
@@ -115,6 +121,15 @@ public final class RelaySession {
                                 || pendingRegistrationPayload == null
                                 || pendingChallenge == null) {
                             throw new IOException("No registration challenge pending");
+                        }
+
+                        // Reject an old challenge even if other frames kept the connection active.
+                        long challengeAgeNanos =
+                                System.nanoTime() - pendingChallengeIssuedAtNanos;
+
+                        if (challengeAgeNanos >= TimeUnit.MILLISECONDS.toNanos(
+                                ProtocolConfig.REGISTRATION_CHALLENGE_TIMEOUT_MILLIS)) {
+                            throw new IOException("Registration challenge expired");
                         }
 
                         // Reconstruct the exact bytes the client must have signed.

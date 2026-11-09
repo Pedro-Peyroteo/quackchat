@@ -15,5 +15,8 @@ public final class ProtocolConfig {
     // Number of random bytes in a registration challenge.
     public static final int REGISTRATION_CHALLENGE_BYTES = 32;
 
+    // Maximum age of a registration challenge when its proof is received.
+    public static final int REGISTRATION_CHALLENGE_TIMEOUT_MILLIS = 30_000;
+
     private ProtocolConfig() {}
 }
