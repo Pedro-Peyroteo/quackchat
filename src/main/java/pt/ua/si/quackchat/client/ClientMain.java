@@ -86,6 +86,19 @@ public class ClientMain {
                 byte[] challenge = response.payload();
                 System.out.println("[*] Received challenge = "
                         + HexFormat.of().formatHex(challenge));
+
+                // Build the same signature input that the relay will reconstruct.
+                byte[] proofData = RegistrationCodec.buildProofData(registrationPayload, challenge);
+
+                // Prove ownership of the private key matching the submitted signing public key.
+                byte[] proofSignature = Signatures.sign(proofData, signingKeys.getPrivate());
+
+                // Send the signature as the registration proof payload.
+                FrameCodec.write(out, new Frame(MessageType.REGISTER_PROOF, proofSignature));
+                out.flush();
+
+                System.out.println("[*] Sent registration proof ("
+                        + proofSignature.length + ") bytes");
             }
         }
         // The socket and its streams are closed.
