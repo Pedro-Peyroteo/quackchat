@@ -1,6 +1,7 @@
 package pt.ua.si.quackchat.shared.crypto;
 
 import java.security.*;
+import java.security.spec.X509EncodedKeySpec;
 
 
 public class Signatures {
@@ -61,6 +62,24 @@ public class Signatures {
 
         // Check the received signature against those bytes.
         return verifier.verify(signatureBytes);
+    }
+
+    /**
+     * Reconstructs an Ed25519 public key from its X.509 encoding.
+     *
+     * @param encodedKey the encoded public key bytes
+     * @return the reconstructed public key
+     * @throws GeneralSecurityException if the key cannot be decoded
+     */
+    public static PublicKey decodePublicKey(byte[] encodedKey) throws GeneralSecurityException {
+        // Instantiate a factory for Ed25519 keys.
+        KeyFactory keyFactory = KeyFactory.getInstance("Ed25519");
+
+        // Describe the supplied bytes as an X.509-encoded public key.
+        X509EncodedKeySpec keySpec = new X509EncodedKeySpec(encodedKey);
+
+        // Reconstruct a public key object from the encoded key material.
+        return keyFactory.generatePublic(keySpec);
     }
 }
 

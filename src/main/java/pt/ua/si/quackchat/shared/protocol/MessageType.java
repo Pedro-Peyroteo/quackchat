@@ -4,9 +4,24 @@ import java.io.IOException;
 
 
 public enum MessageType {
-    // Each constant call the constructor with its protocol code.
+    // Check that a connection can exchange frames.
     PING(1),
-    PONG(2);
+    PONG(2),
+
+    // Submit the client's identity and public keys.
+    REGISTER_REQUEST(3),
+
+    // Challenge the client to prove possession of its signing key.
+    REGISTER_CHALLENGE(4),
+
+    // Return the client's signature over the registration proof data.
+    REGISTER_PROOF(5),
+
+    // Return the relay-signed registration credential.
+    REGISTER_SUCCESS(6),
+
+    // Report a rejected request.
+    ERROR(7);
 
     // Store the code that belongs to this enum constant.
     // final prevents reassignment after construction.
