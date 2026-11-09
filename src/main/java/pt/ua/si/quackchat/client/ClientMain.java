@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
@@ -40,13 +41,22 @@ public class ClientMain {
      */
     public static void main(String[] args) throws IOException, GeneralSecurityException {
         // Accept and optional host, port and client identity.
-        if (args.length > 3) {
-            throw new IllegalArgumentException("Usage: ClientMain [host] [port] [identity]");
+        // Accept an optional host, port, client identity and contact to discover.
+        if (args.length > 4) {
+            throw new IllegalArgumentException(
+                    "Usage: ClientMain [host] [port] [identity] [contact]");
         }
 
-        String host = args.length >= 1 ? args[0] : ProtocolConfig.DEFAULT_RELAY_HOST;
-        int port = args.length >= 2 ? parsePort(args[1]) : ProtocolConfig.DEFAULT_RELAY_PORT;
-        String identity = args.length == 3 ? args[2] : "alice";
+        String host = args.length >= 1
+                ? args[0] : ProtocolConfig.DEFAULT_RELAY_HOST;
+        int port = args.length >= 2
+                ? parsePort(args[1]) : ProtocolConfig.DEFAULT_RELAY_PORT;
+        String identity = args.length >= 3 ? args[2] : "alice";
+        String contact = args.length == 4 ? args[3] : null;
+
+        // Validate and prepare the optional lookup before opening the connection.
+        byte[] discoveryPayload =
+                contact == null ? null : DiscoveryCodec.encodeRequest(contact);
 
         // Read the relay public key from the X.509 certificate exported by keytool.
         // Trust comes from provisioning this file through a trusted setup channel.
@@ -122,6 +132,13 @@ public class ClientMain {
 
                 // Wait for the signed credential returned after proof verification.
                 Frame result = FrameCodec.read(in);
+
+                // Surface a registration rejection returned by the relay.
+                if (result.type() == MessageType.ERROR) {
+                    throw new IOException("Registration rejected: "
+                            + new String(result.payload(), StandardCharsets.UTF_8));
+                }
+
                 if (result.type() != MessageType.REGISTER_SUCCESS) {
                     throw new IOException("Expected registration success");
                 }
@@ -142,6 +159,38 @@ public class ClientMain {
                 System.out.println("[*] Verified relay credential for "
                         + credential.registration().identity());
                 System.out.println("[*] Credential issued at " + credential.issuedAt());
+
+                if (discoveryPayload != null) {
+                    // Ask for the contact's registered credential.
+                    FrameCodec.write(out, new Frame(
+                            MessageType.DISCOVER_REQUEST, discoveryPayload));
+                    out.flush();
+
+                    Frame discoveryResult = FrameCodec.read(in);
+
+                    if (discoveryResult.type() == MessageType.ERROR) {
+                        throw new IOException("Discovery failed: "
+                                + new String(discoveryResult.payload(), StandardCharsets.UTF_8));
+                    }
+
+                    if (discoveryResult.type() != MessageType.DISCOVER_RESPONSE) {
+                        throw new IOException("Expected a discovery response");
+                    }
+
+                    // Verify the returned credential using the previously trusted relay key.
+                    Credential contactCredential = CredentialCodec.verify(
+                            discoveryResult.payload(), trustedRelayKey);
+
+                    // A valid credential must also belong to the identity we requested.
+                    if (!contact.equals(contactCredential.registration().identity())) {
+                        throw new IOException("Discovery returned a different identity");
+                    }
+
+                    System.out.println("[*] Discovered and verified "
+                            + contactCredential.registration().identity());
+                    System.out.println("[*] Contact credential issued at "
+                            + contactCredential.issuedAt());
+                }
             }
         }
         // The socket and its streams are closed.

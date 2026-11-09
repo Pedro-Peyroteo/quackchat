@@ -24,6 +24,9 @@ public final class RelayServer implements AutoCloseable {
     // Shared relay identity used to sign client credentials.
     private final PrivateKey relaySigningKey;
 
+    // Share registered credentials across all sessions handled by this relay.
+    private final ClientDirectory directory = new ClientDirectory();
+
     public RelayServer(int port, PrivateKey relaySigningKey) throws IOException {
         this.relaySigningKey =
                 Objects.requireNonNull(relaySigningKey, "relaySigningKey");
@@ -93,7 +96,7 @@ public final class RelayServer implements AutoCloseable {
     private void handle(Socket client) {
         try (Socket connection = client) {
             System.out.println("[*] Client connected: " + connection.getRemoteSocketAddress());
-            RelaySession.handle(connection, relaySigningKey);
+            RelaySession.handle(connection, relaySigningKey, directory);
         } catch (IOException e) {
             System.err.println("[!] Client session failed: " + e);
         }

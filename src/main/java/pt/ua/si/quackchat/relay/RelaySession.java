@@ -8,6 +8,7 @@ import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.PrivateKey;
 import java.security.SecureRandom;
@@ -48,7 +49,8 @@ public final class RelaySession {
      *                     frames, if a timeout occurs, or if the received
      *                     frame is not a valid empty PING request
      */
-    public static void handle(Socket conn, PrivateKey relaySigningKey) throws IOException {
+    public static void handle(Socket conn, PrivateKey relaySigningKey, ClientDirectory directory)
+            throws IOException {
         conn.setSoTimeout(ProtocolConfig.READ_TIMEOUT_MILLIS);
 
         try (
@@ -148,6 +150,21 @@ public final class RelaySession {
                             throw new IOException("Could not sign registration credential", e);
                         }
 
+                        // Reserve the identity before returning a successful registration.
+                        if (!directory.register(
+                                verifiedRegistration.identity(), credentialPayload)) {
+                            FrameCodec.write(out, new Frame(
+                                    MessageType.ERROR,
+                                    "Identity already registered".getBytes(StandardCharsets.UTF_8)));
+
+                            // Send the rejection before closing this session.
+                            out.flush();
+                            return;
+                        }
+
+                        System.out.println("[*] Stored credential for "
+                                + verifiedRegistration.identity());
+
                         // Return the signed credential as the registration result.
                         FrameCodec.write(out,
                                 new Frame(MessageType.REGISTER_SUCCESS, credentialPayload));
@@ -155,6 +172,30 @@ public final class RelaySession {
                         System.out.println("[*] Issued credential for "
                                 + verifiedRegistration.identity());
 
+                    }
+                    case DISCOVER_REQUEST -> {
+                        // Require this connection to complete registration before discovery.
+                        if (verifiedRegistration == null) {
+                            throw new IOException("Register before requesting discovery");
+                        }
+
+                        String targetIdentity =
+                                DiscoveryCodec.decodeRequest(request.payload());
+
+                        // Retrieve the original credential bytes stored during registration.
+                        byte[] targetCredential = directory.find(targetIdentity);
+
+                        if (targetCredential == null) {
+                            FrameCodec.write(out, new Frame(
+                                    MessageType.ERROR,
+                                    "Identity not found".getBytes(StandardCharsets.UTF_8)));
+                        } else {
+                            FrameCodec.write(out, new Frame(
+                                    MessageType.DISCOVER_RESPONSE, targetCredential));
+
+                            System.out.println("[*] Returned credential for "
+                                    + targetIdentity + " to " + verifiedRegistration.identity());
+                        }
                     }
 
                     default -> throw new IOException("Unexpected message type: " + request.type());

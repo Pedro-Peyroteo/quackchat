@@ -11,7 +11,7 @@ import java.security.spec.X509EncodedKeySpec;
 
 public class RegistrationCodec {
     // Maximum encoded lengths accepted by the registration protocol.
-    private static final int MAX_IDENTITY_BYTES = 64;
+    static final int MAX_IDENTITY_BYTES = 64;
     private static final int MAX_PUBLIC_KEY_BYTES = 1_024;
 
     // Maximum encoded request size:

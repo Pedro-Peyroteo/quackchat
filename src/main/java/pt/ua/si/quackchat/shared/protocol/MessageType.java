@@ -21,7 +21,13 @@ public enum MessageType {
     REGISTER_SUCCESS(6),
 
     // Report a rejected request.
-    ERROR(7);
+    ERROR(7),
+
+    // Request the credential associated with an identity.
+    DISCOVER_REQUEST(8),
+
+    // Return the original relay-signed credential.
+    DISCOVER_RESPONSE(9);
 
     // Store the code that belongs to this enum constant.
     // final prevents reassignment after construction.
