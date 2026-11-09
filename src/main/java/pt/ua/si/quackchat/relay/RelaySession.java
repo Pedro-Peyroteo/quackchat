@@ -1,15 +1,14 @@
 package pt.ua.si.quackchat.relay;
 
-import pt.ua.si.quackchat.shared.protocol.Frame;
-import pt.ua.si.quackchat.shared.protocol.FrameCodec;
-import pt.ua.si.quackchat.shared.protocol.MessageType;
-import pt.ua.si.quackchat.shared.protocol.ProtocolConfig;
+import pt.ua.si.quackchat.shared.protocol.*;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.net.Socket;
+import java.security.SecureRandom;
+import java.util.HexFormat;
 
 /**
  * Handles a single relay protocol session with a connected client.
@@ -22,10 +21,14 @@ import java.net.Socket;
  * instantiated.
  */
 public final class RelaySession {
+    // Generate unpredictable registration challenges.
+    private static final SecureRandom RANDOM = new SecureRandom();
+
     /**
      * Prevents instantiation of this utility class.
      */
     private RelaySession() {}
+
     /**
      * Processes a single client connection.
      *
@@ -49,14 +52,50 @@ public final class RelaySession {
                 DataInputStream in = new DataInputStream(conn.getInputStream());
                 DataOutputStream out = new DataOutputStream(conn.getOutputStream())
         ) {
+            // Keep the pending registration and challenge with this connection.
+            RegisterRequest pendingRegistration = null;
+            byte[] pendingChallenge = null;
+
             while (true) {
                 Frame request = FrameCodec.read(in);
 
-                if (request.type() != MessageType.PING || request.payload().length != 0) {
-                    throw new IOException("Expected an empty PING frame");
+                // Handle each frame according to its protocol type.
+                // To add more types, add a case clause.
+                switch (request.type()) {
+                    case PING -> {
+                        // A PING must have an empty payload.
+                        if (request.payload().length != 0) {
+                            throw new IOException("Expected an empty PING frame");
+                        }
+
+                        FrameCodec.write(out, new Frame(MessageType.PONG, new byte[0]));
+                    }
+
+                    case REGISTER_REQUEST -> {
+                        // Only allow one pending registration on this connection.
+                        if (pendingRegistration != null) {
+                            throw new IOException("Registration already pending");
+                        }
+
+                        // Decode and validate the submitted identity and public keys.
+                        pendingRegistration = RegistrationCodec.decodeRequest(request.payload());
+
+                        // Generate a fresh challenge for this registration.
+                        pendingChallenge = new byte[ProtocolConfig.REGISTRATION_CHALLENGE_BYTES];
+                        RANDOM.nextBytes(pendingChallenge);
+
+                        // Return the challenge bytes to the client.
+                        FrameCodec.write(out, new Frame(MessageType.REGISTER_CHALLENGE, pendingChallenge));
+
+                        System.out.println("[*] Challenge for "
+                                + pendingRegistration.identity() + " = "
+                                + HexFormat.of().formatHex(pendingChallenge));
+                    }
+
+                    default -> throw new IOException("Unexpected message type: " + request.type());
                 }
 
-                FrameCodec.write(out, new Frame(MessageType.PONG, new byte[0]));
+                // Send the response before waiting for the next frame.
                 out.flush();
             }
         } catch (EOFException e) {

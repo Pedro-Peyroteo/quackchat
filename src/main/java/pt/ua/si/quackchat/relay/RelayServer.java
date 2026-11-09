@@ -85,7 +85,6 @@ public final class RelayServer implements AutoCloseable {
         try (Socket connection = client) {
             System.out.println("[*] Client connected: " + connection.getRemoteSocketAddress());
             RelaySession.handle(connection);
-            System.out.println("[*] PING/PONG completed: " + connection.getRemoteSocketAddress());
         } catch (IOException e) {
             System.err.println("[!] Client session failed: " + e);
         }
