@@ -10,13 +10,13 @@ protected delivery of a message between two online clients.
 - JDK 25, including `java` and `keytool`.
 - Maven.
 - Run the commands below from the project root.
-- The examples use PowerShell.
+- Commands work in Bash and PowerShell unless a specific shell is shown.
 
 ---
 
 ## Build
 
-```powershell
+```sh
 mvn compile
 ```
 
@@ -29,11 +29,21 @@ Compiled application classes are written to `target/classes`.
 Perform this setup once for a new local environment.
 Reuse existing key files for subsequent runs.
 
+**Linux (Bash)**
+
+```bash
+mkdir -p keys
+```
+
+**Windows (PowerShell)**
+
 ```powershell
 New-Item -ItemType Directory -Path keys -Force
 ```
 
-```powershell
+Generate the relay key pair.
+
+```sh
 keytool -genkeypair -alias relay -keyalg Ed25519 -storetype PKCS12 -keystore keys/relay.p12 -dname "CN=QuackChat Relay" -validity 365
 ```
 
@@ -41,7 +51,7 @@ Choose a keystore password when prompted.
 
 Export the relay's public certificate:
 
-```powershell
+```sh
 keytool -exportcert -alias relay -keystore keys/relay.p12 -file keys/relay.cer
 ```
 
@@ -59,16 +69,26 @@ For separate machines, provision only the public certificate to clients at
 ## Run the relay
 
 In the relay terminal, read the password without displaying it and make it
-available to the Java process:
+available to the Java process.
+
+**Linux (Bash)**
+
+```bash
+IFS= read -r -s -p 'Relay keystore password: ' QUACKCHAT_RELAY_KEYSTORE_PASSWORD
+printf '\n'
+export QUACKCHAT_RELAY_KEYSTORE_PASSWORD
+```
+
+**Windows (PowerShell)**
 
 ```powershell
 $relayPassword = Read-Host "Relay keystore password" -AsSecureString
 $env:QUACKCHAT_RELAY_KEYSTORE_PASSWORD = [System.Net.NetworkCredential]::new("", $relayPassword).Password
 ```
 
-Start the relay:
+Start the relay.
 
-```powershell
+```sh
 java -cp target/classes pt.ua.si.quackchat.relay.RelayMain
 ```
 
@@ -85,7 +105,7 @@ Leave the relay running.
 
 In a second terminal, register Bob and leave him connected:
 
-```powershell
+```sh
 java -cp target/classes pt.ua.si.quackchat.client.ClientMain localhost 5000 bob
 ```
 
@@ -97,8 +117,8 @@ Wait for:
 
 In a third terminal, register Alice, discover Bob and send a message:
 
-```powershell
-java -cp target/classes pt.ua.si.quackchat.client.ClientMain localhost 5000 alice bob "This is our Phase 1 demo!"
+```sh
+java -cp target/classes pt.ua.si.quackchat.client.ClientMain localhost 5000 alice bob 'This is our Phase 1 demo!'
 ```
 
 Bob should print:
@@ -164,6 +184,10 @@ Not yet exercised:
 
 - Modified-message and replay rejection.
 - Expired-challenge rejection.
+
+On Ubuntu under WSL, we verified the Bash steps for creating the key directory,
+exporting the relay password, and quoting the demo message. The full build and
+two-client demo on Linux with JDK 25 and Maven are pending verification.
 
 ---
 
