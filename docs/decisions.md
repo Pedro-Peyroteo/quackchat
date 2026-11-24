@@ -88,6 +88,18 @@ The architecture document condenses these; this file keeps the alternatives and 
 - **Why:** Automatic re-registration would bring back the same-key path rejected in D7.
 - **Consequences:** During development, delete `clients/*/` after restarting the relay.
 
+## D10 — Password-based encryption parameters
+
+- **Date:** 2026-11-24
+- **Decision:** PBKDF2-HMAC-SHA256 with a 16-byte random salt and 600,000 iterations, deriving an AES-256 key used with AES-GCM (12-byte nonce, 16-byte tag). Iterations accepted on load: 600,000 to 6,000,000. Shared by the client identity file and, later, the relay store (`PasswordEncryption`).
+- **Alternatives:** AES-128 (as for message keys). Fewer iterations. A memory-hard function such as scrypt or Argon2 (not in the JDK).
+- **Why:**
+  - **Salt:** NIST SP 800-132 requires at least 128 random bits. With 16 bytes, two files sharing a salt is negligible, so precomputed tables are useless and every file must be attacked on its own.
+  - **Iterations:** OWASP recommends 600,000 for PBKDF2-HMAC-SHA256, so each password guess costs an attacker 600,000 HMAC computations. Measured: 224 ms per derivation on Windows 11, JDK 25.0.5.1 (`PasswordEncryptionCheck`, 2026-11-24). This was the first derivation in the process, so it includes JVM and crypto-provider start-up and slightly overstates the normal cost. The figure is what a user pays per unlock, not what an attacker pays: dedicated hardware such as GPUs computes PBKDF2-HMAC-SHA256 much faster, which is why the count is set from a published recommendation rather than from this measurement.
+  - **Bounds:** the minimum equals the default because no weaker file exists; accepting fewer would only help an attacker who edits a file. The maximum stops a tampered file from stalling the program.
+  - **AES-256:** the password, not the key size, limits security, so AES-128 would be defensible too. AES-256 costs nothing here and matches the relay store design. Message keys stay at 128 bits because each protects a single message.
+- **Consequences:** Security still depends on password strength; PBKDF2 only slows guessing and is not memory-hard. Java cannot guarantee secrets are wiped from memory, so wiping is best-effort. Deriving 64 bytes with PBKDF2-HMAC-SHA256 runs the full iteration count twice while an attacker needs only the first 32 bytes; to be reconsidered for the relay store.
+
 ---
 
 ## Open questions
