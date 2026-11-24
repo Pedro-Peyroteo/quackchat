@@ -45,3 +45,6 @@ build/
 
 # Locally provisioned relay keys and trust material.
 /keys/
+
+# Per-client identity files (encrypted private keys).
+/clients/
