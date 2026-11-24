@@ -16,6 +16,8 @@ protected delivery of a message between two online clients.
 
 ## Build
 
+**From the project's root:**
+
 ```sh
 mvn compile
 ```
