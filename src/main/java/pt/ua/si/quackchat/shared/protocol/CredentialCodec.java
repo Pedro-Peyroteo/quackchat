@@ -16,7 +16,7 @@ public final  class CredentialCodec {
             "QuackChat:credential:v1".getBytes(StandardCharsets.UTF_8);
 
     // Fixed context, issuance time, bounded registration and signature.
-    static final int MAX_PAYLOAD_BYTES =
+    public static final int MAX_PAYLOAD_BYTES =
             CONTEXT.length + Long.BYTES
                     + RegistrationCodec.MAX_REQUEST_BYTES + Signatures.SIGNATURE_BYTES;
 
