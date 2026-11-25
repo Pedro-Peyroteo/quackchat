@@ -1,7 +1,8 @@
-# QuackChat — Phase 1
+# QuackChat
 
-Java TCP messaging prototype implementing registration, discovery and
-protected delivery of a message between two online clients.
+Java TCP messaging prototype implementing registration, login with a stored
+identity, discovery and protected delivery of a message between two online
+clients. Phase 2 work in progress.
 
 ---
 
@@ -101,6 +102,41 @@ run configuration and use the project root as its working directory.
 
 ---
 
+## Client identities and passwords
+
+Each client keeps its identity in `clients/<identity>/identity.bin`: the
+relay-signed credential and both private keys, encrypted with a key derived
+from the identity's password. The `clients/` directory is excluded from Git.
+
+- First run for an identity: the client registers, then asks for a new
+  password twice and saves the file.
+- Later runs: the client asks for the password, loads and checks the file,
+  then logs in instead of registering.
+
+In a terminal, the client prompts for the password without displaying it.
+Without a terminal (for example in IntelliJ), set the password in
+`QUACKCHAT_CLIENT_PASSWORD` instead:
+
+**Linux (Bash)**
+
+```bash
+IFS= read -r -s -p 'Client password: ' QUACKCHAT_CLIENT_PASSWORD
+printf '\n'
+export QUACKCHAT_CLIENT_PASSWORD
+```
+
+**Windows (PowerShell)**
+
+```powershell
+$clientPassword = Read-Host "Client password" -AsSecureString
+$env:QUACKCHAT_CLIENT_PASSWORD = [System.Net.NetworkCredential]::new("", $clientPassword).Password
+```
+
+A lost password or identity file cannot be recovered; the identity can no
+longer be used.
+
+---
+
 ## Run the two-client demo
 
 Leave the relay running.
@@ -138,12 +174,47 @@ Client arguments:
 ClientMain [host] [port] [identity] [contact] [message]
 ```
 
-Without a contact, the client registers and listens.
+Without a contact, the client registers or logs in, then listens.
 With a contact, it discovers that identity, sends one message and then listens.
 Without explicit message text, it sends `Hello, <contact>!`.
 
-Use Ctrl+C to stop clients. Restart the relay before repeating the demo with
-the same identities, because registrations remain in memory until it stops.
+Use Ctrl+C to stop clients.
+
+### Reconnect with a stored identity
+
+Stop Alice with Ctrl+C and run the same command again. Alice now loads
+`clients/alice/identity.bin`, logs in and sends another message:
+
+```text
+[*] Loaded identity file clients/alice/identity.bin
+[*] Sent login request for alice
+[*] Logged in as alice
+```
+
+If an identity logs in again while its first client is still connected, the
+newest login wins. The older client prints:
+
+```text
+[!] Relay error: Session replaced by a new login
+```
+
+### After restarting the relay
+
+The relay keeps registrations in memory only, so after a restart a stored
+identity is unknown and its login fails with `Login rejected: Unknown identity`.
+Delete the identity directories before repeating the demo:
+
+**Linux (Bash)**
+
+```bash
+rm -rf clients
+```
+
+**Windows (PowerShell)**
+
+```powershell
+Remove-Item -Recurse -Force clients
+```
 
 ---
 
@@ -163,6 +234,15 @@ the same identities, because registrations remain in memory until it stops.
    complete envelope, including the sender's credential.
 10. The recipient verifies the credential, sender, recipient and signature,
     unwraps the AES key, verifies the GCM tag, and displays the plaintext.
+11. After registering, the client saves its credential and private keys in an
+    identity file protected with AES-256-GCM, using a key derived from its
+    password with PBKDF2-HMAC-SHA256 (600,000 iterations, random 16-byte salt).
+12. On later runs, the client checks the file locally (GCM tag, relay
+    signature on the credential, keys matching the credential), then sends a
+    login request naming only its identity. The relay answers with a fresh
+    32-byte challenge, and the client signs a login-specific encoding of its
+    identity and the challenge. The relay verifies the signature with the
+    signing key stored at registration.
 
 The relay forwards the original protected payload and does not decrypt it.
 Routing identities and other metadata remain visible.
@@ -182,6 +262,23 @@ Manually observed:
 - Abrupt disconnects are reported without the observed connection-reset
   stack traces during established sessions.
 
+Phase 2 additions, observed in local runs:
+
+- A returning client loads its identity file and logs in; messages still flow.
+- A second login for a connected identity replaces the first; the first
+  client is told why, and new messages reach the second.
+- A wrong password fails locally, before connecting.
+- After a relay restart, login fails with `Unknown identity`.
+
+Runnable checks (after `mvn test-compile`; in PowerShell, quote the classpath
+and use `;` as the separator):
+
+```sh
+java -cp target/classes:target/test-classes pt.ua.si.quackchat.shared.crypto.SignaturesCheck
+java -cp target/classes:target/test-classes pt.ua.si.quackchat.shared.crypto.PasswordEncryptionCheck
+java -cp target/classes:target/test-classes pt.ua.si.quackchat.client.IdentityStoreCheck
+```
+
 Not yet exercised:
 
 - Modified-message and replay rejection.
@@ -195,14 +292,16 @@ two-client demo on Linux with JDK 25 and Maven are pending verification.
 
 ## Current limitations
 
-- Client keys exist only in process memory and are regenerated at startup.
-- The directory is in memory and is cleared when the relay restarts.
-- Registered identities cannot currently reconnect during the same relay run.
+- The relay directory is in memory and is cleared when the relay restarts;
+  stored client identities must then be deleted.
 - One outgoing message is supplied at startup; interactive messaging is pending.
 - Offline message storage and retrieval are not implemented.
 - Accepted message IDs are remembered only for the client process lifetime.
 - Credentials include issuance time; expiry and revocation are not implemented.
-- Registration challenges have a 30-second acceptance limit.
-- Registration reads have a five-second timeout; registered clients can wait
-  indefinitely for messages.
+- Registration and login challenges have a 30-second acceptance limit.
+- Reads have a five-second timeout until the client authenticates;
+  authenticated clients can wait indefinitely for messages.
+- Without TLS, an attacker on the network path could inject frames into a
+  connection after login (to be addressed with signed requests for stored
+  messages).
 - Usernames identify registered keys, not independently verified real-world people.
