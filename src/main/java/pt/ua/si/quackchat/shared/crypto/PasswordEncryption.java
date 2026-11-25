@@ -1,13 +1,9 @@
 package pt.ua.si.quackchat.shared.crypto;
 
-import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.SecretKeyFactory;
-import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
 import java.security.GeneralSecurityException;
-import java.security.InvalidAlgorithmParameterException;
-import java.security.InvalidKeyException;
 import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
 
@@ -113,14 +109,7 @@ public final class PasswordEncryption {
     public static byte[] encrypt(byte[] plaintext, SecretKey key,
                                  byte[] nonce, byte[] associatedData)
             throws GeneralSecurityException {
-        validateParameters(key, nonce);
-
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(
-                MessageEncryption.TAG_BYTES * Byte.SIZE, nonce));
-
-        cipher.updateAAD(associatedData);
-        return cipher.doFinal(plaintext);
+        return AesGcm.encrypt(plaintext, key, KEY_BYTES, nonce, associatedData);
     }
 
     /**
@@ -138,42 +127,6 @@ public final class PasswordEncryption {
     public static byte[] decrypt(byte[] ciphertext, SecretKey key,
                                  byte[] nonce, byte[] associatedData)
             throws GeneralSecurityException {
-        validateParameters(key, nonce);
-
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(
-                MessageEncryption.TAG_BYTES * Byte.SIZE, nonce));
-
-        cipher.updateAAD(associatedData);
-        return cipher.doFinal(ciphertext);
-    }
-
-    /**
-     * Validates the key and nonce before initializing GCM.
-     */
-    private static void validateParameters(SecretKey key, byte[] nonce)
-            throws GeneralSecurityException {
-        validateKey(key);
-
-        if (nonce == null || nonce.length != MessageEncryption.NONCE_BYTES) {
-            throw new InvalidAlgorithmParameterException(
-                    "Expected a 12-byte GCM nonce");
-        }
-    }
-
-    /**
-     * Requires an AES key of exactly KEY_BYTES.
-     *
-     * MessageEncryption keeps its separate 128-bit check for message keys.
-     */
-    private static void validateKey(SecretKey key) throws InvalidKeyException {
-        if (key == null || !"AES".equals(key.getAlgorithm())) {
-            throw new InvalidKeyException("Expected an AES key");
-        }
-
-        byte[] encodedKey = key.getEncoded();
-        if (encodedKey == null || encodedKey.length != KEY_BYTES) {
-            throw new InvalidKeyException("Expected a 256-bit AES key");
-        }
+        return AesGcm.decrypt(ciphertext, key, KEY_BYTES, nonce, associatedData);
     }
 }
