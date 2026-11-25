@@ -100,6 +100,14 @@ The architecture document condenses these; this file keeps the alternatives and 
   - **AES-256:** the password, not the key size, limits security, so AES-128 would be defensible too. AES-256 costs nothing here and matches the relay store design. Message keys stay at 128 bits because each protects a single message.
 - **Consequences:** Security still depends on password strength; PBKDF2 only slows guessing and is not memory-hard. Java cannot guarantee secrets are wiped from memory, so wiping is best-effort. Deriving 64 bytes with PBKDF2-HMAC-SHA256 runs the full iteration count twice while an attacker needs only the first 32 bytes; to be reconsidered for the relay store.
 
+## D11 — Identity file is never overwritten
+
+- **Date:** 2026-11-25
+- **Decision:** `IdentityStore.save` refuses to write if the file already exists. Writes go to `identity.bin.tmp` and are moved into place in one step. Identities are validated against `[A-Za-z0-9_-]+` before being used in a path.
+- **Alternatives:** Overwrite on save. Build the path from the raw identity.
+- **Why:** The file holds the only copy of the private keys; losing it locks the identity out for good (D6). The temporary file means a crash cannot leave a half-written file. The character check stops an identity such as `../keys` from writing outside `clients/` (path traversal).
+- **Consequences:** Threat-table rows: path traversal through the identity name (mitigated), stolen identity file (offline password guessing, slowed by PBKDF2, D10). Changing the password would need a separate, explicit operation; not planned.
+
 ---
 
 ## Open questions
