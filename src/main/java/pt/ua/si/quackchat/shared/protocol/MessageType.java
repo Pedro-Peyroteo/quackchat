@@ -33,7 +33,19 @@ public enum MessageType {
     SEND_MESSAGE(10),
 
     // Deliver the original protected message to its recipient.
-    DELIVER_MESSAGE(11);
+    DELIVER_MESSAGE(11),
+
+    // Ask to resume a registered identity.
+    LOGIN_REQUEST(12),
+
+    // Challenge the client to prove possession of the registered signing key.
+    LOGIN_CHALLENGE(13),
+
+    // Return the client's signature over the login proof data.
+    LOGIN_PROOF(14),
+
+    // Confirm the login; empty payload.
+    LOGIN_SUCCESS(15);
 
     // Store the code that belongs to this enum constant.
     // final prevents reassignment after construction.
