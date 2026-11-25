@@ -24,20 +24,22 @@ import java.util.HexFormat;
 public class ClientMain {
 
     /**
-     * Starts the client application and performs a single PING/PONG
-     * exchange with a relay server.
+     * Registers with the relay and optionally sends one protected message.
      *
-     * The first optional argument specifies the relay host and the
-     * second optional argument specifies the relay port.
+     * The client reads the relay's public key from keys/relay.cer, generates
+     * new Ed25519 and RSA key pairs, and registers by proving possession of its
+     * signing key. With a contact, it discovers and verifies that contact's
+     * credential and sends one encrypted, signed message. It then stays
+     * connected and displays verified incoming messages until stopped.
      *
-     * @param args command-line arguments in the form
-     *             {@code [host] [port]}
+     * @param args {@code [host] [port] [identity] [contact] [message]};
+     *             defaults are localhost, 5000 and "alice"
      * @throws IOException if a network error occurs, a timeout is reached,
-     *                     or the relay returns an invalid response
+     *                     or the relay rejects or answers a request incorrectly
      * @throws IllegalArgumentException if too many arguments are supplied
-     *                                  or the specified port is invalid
-     *
-     * @throws GeneralSecurityException if client key generation fails
+     *                                  or the port is invalid
+     * @throws GeneralSecurityException if key generation or a cryptographic
+     *                                  check fails
      */
     public static void main(String[] args) throws IOException, GeneralSecurityException {
         // Accept an optional host, port, identity, contact and message.

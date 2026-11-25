@@ -16,14 +16,16 @@ import java.util.HexFormat;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Handles a single relay protocol session with a connected client.
+ * Runs the relay protocol for one client connection.
  *
- * A relay session consists of a simple request-response exchange:
- * the client sends an empty {@link MessageType#PING} frame and the
- * relay replies with an empty {@link MessageType#PONG} frame.
+ * A session starts unregistered. The client sends its identity and public
+ * keys, then signs a fresh challenge to prove possession of its signing key;
+ * the relay then issues, stores and returns a signed credential. A registered
+ * connection can request other users' credentials and submit protected
+ * messages, which the relay forwards to online recipients without decrypting
+ * them. PING is answered with PONG at any time.
  *
- * This class is implemented as a utility class and cannot be
- * instantiated.
+ * This class is a utility class and cannot be instantiated.
  */
 public final class RelaySession {
     // Generate unpredictable registration challenges.
@@ -35,20 +37,18 @@ public final class RelaySession {
     private RelaySession() {}
 
     /**
-     * Processes a single client connection.
+     * Processes frames from one client until the connection ends.
      *
-     * The method configures the socket read timeout, reads a frame
-     * from the client, validates that it is an empty
-     * {@link MessageType#PING} frame, and responds with an empty
-     * {@link MessageType#PONG} frame.
-     *
-     * If the received frame does not conform to the protocol,
-     * an {@link IOException} is thrown and the session is terminated.
+     * Reads use the protocol read timeout until registration succeeds; the
+     * timeout is then removed so the client can wait for messages. A protocol
+     * violation ends the session with an exception. When the session ends, a
+     * registered client is marked offline but its credential stays stored.
      *
      * @param conn the connected client socket
-     * @throws IOException if an I/O error occurs while reading or writing
-     *                     frames, if a timeout occurs, or if the received
-     *                     frame is not a valid empty PING request
+     * @param relaySigningKey the relay's Ed25519 key used to sign credentials
+     * @param directory the shared directory of credentials and online clients
+     * @throws IOException if reading or writing fails, a read times out,
+     *                     or the client violates the protocol
      */
     public static void handle(Socket conn, PrivateKey relaySigningKey, ClientDirectory directory)
             throws IOException {
