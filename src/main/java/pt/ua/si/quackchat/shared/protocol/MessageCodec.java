@@ -21,7 +21,6 @@ public final class MessageCodec {
     // Bound message content and the final Ed25519 signature.
     // 4,096-byte plaintext limit is the bounded demo-message size, not a cryptographic limit.
     public static final int MAX_PLAINTEXT_BYTES = 4_096;
-    private static final int SIGNATURE_BYTES = 64;
 
     // Maximum complete envelope size, including:
     //   Fixed protocol context and a 16-byte UUID.
@@ -40,7 +39,7 @@ public final class MessageCodec {
                     + KeyEnvelopes.WRAPPED_KEY_BYTES
                     + Integer.BYTES + MAX_PLAINTEXT_BYTES
                     + MessageEncryption.TAG_BYTES
-                    + SIGNATURE_BYTES;
+                    + Signatures.SIGNATURE_BYTES;
 
     public record Header(UUID messageId, String sender, String recipient) {}
 
@@ -107,7 +106,7 @@ public final class MessageCodec {
         byte[] signedData = buffer.toByteArray();
         byte[] signature = Signatures.sign(signedData, signingKey);
 
-        if (signature.length != SIGNATURE_BYTES) {
+        if (signature.length != Signatures.SIGNATURE_BYTES) {
             throw new IOException("Unexpected message signature length");
         }
 
@@ -154,7 +153,7 @@ public final class MessageCodec {
         validatePayloadLength(payload);
 
         // Preserve the exact received bytes covered by the signature.
-        int signatureOffset = payload.length - SIGNATURE_BYTES;
+        int signatureOffset = payload.length - Signatures.SIGNATURE_BYTES;
         byte[] signedData = Arrays.copyOfRange(payload, 0, signatureOffset);
         byte[] signature = Arrays.copyOfRange(
                 payload, signatureOffset, payload.length);
@@ -290,7 +289,7 @@ public final class MessageCodec {
      * Rejects oversized payloads and payloads without room for signed data.
      */
     private static void validatePayloadLength(byte[] payload) throws IOException {
-        if (payload == null || payload.length <= SIGNATURE_BYTES
+        if (payload == null || payload.length <= Signatures.SIGNATURE_BYTES
                 || payload.length > MAX_PAYLOAD_BYTES) {
             throw new IOException("Invalid protected message length");
         }

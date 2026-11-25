@@ -15,13 +15,10 @@ public final  class CredentialCodec {
     private static final byte[] CONTEXT =
             "QuackChat:credential:v1".getBytes(StandardCharsets.UTF_8);
 
-    // Ed25519 signatures always contain 64 bytes.
-    private static final int SIGNATURE_BYTES = 64;
-
     // Fixed context, issuance time, bounded registration and signature.
     static final int MAX_PAYLOAD_BYTES =
             CONTEXT.length + Long.BYTES
-                    + RegistrationCodec.MAX_REQUEST_BYTES + SIGNATURE_BYTES;
+                    + RegistrationCodec.MAX_REQUEST_BYTES + Signatures.SIGNATURE_BYTES;
 
     private CredentialCodec() {}
 
@@ -53,7 +50,7 @@ public final  class CredentialCodec {
         byte[] signedData = buffer.toByteArray();
         byte[] signature = Signatures.sign(signedData, relayPrivateKey);
 
-        if (signature.length != SIGNATURE_BYTES) {
+        if (signature.length != Signatures.SIGNATURE_BYTES) {
             throw new IOException("Unexpected credential signature length");
         }
 
@@ -80,14 +77,14 @@ public final  class CredentialCodec {
     public static Credential verify(byte[] payload, PublicKey trustedRelayKey)
             throws IOException, GeneralSecurityException {
         // Require room for the fixed fields and a nonempty registration.
-        int fixedBytes = CONTEXT.length + Long.BYTES + SIGNATURE_BYTES;
+        int fixedBytes = CONTEXT.length + Long.BYTES + Signatures.SIGNATURE_BYTES;
         if (payload == null || payload.length <= fixedBytes
                 || payload.length > MAX_PAYLOAD_BYTES) {
             throw new IOException("Invalid credential length");
         }
 
         // The final 64 bytes are the signature; all preceding bytes are signed.
-        int signatureOffset = payload.length - SIGNATURE_BYTES;
+        int signatureOffset = payload.length - Signatures.SIGNATURE_BYTES;
         byte[] signedData = Arrays.copyOfRange(payload, 0, signatureOffset);
         byte[] signature = Arrays.copyOfRange(
                 payload, signatureOffset, payload.length);

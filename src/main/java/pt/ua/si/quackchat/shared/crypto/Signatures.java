@@ -4,7 +4,13 @@ import java.security.*;
 import java.security.spec.X509EncodedKeySpec;
 
 
-public class Signatures {
+public final class Signatures {
+    // Ed25519 signatures are always 64 bytes (RFC 8032).
+    public static final int SIGNATURE_BYTES = 64;
+
+    // Utility class. Callers use its static methods.
+    private Signatures() {}
+
     /**
      * Generates a new Ed25519 key pair for signing and verification.
      *
