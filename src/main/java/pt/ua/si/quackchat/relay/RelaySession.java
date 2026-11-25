@@ -11,6 +11,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.util.HexFormat;
 import java.util.concurrent.TimeUnit;
@@ -18,12 +19,15 @@ import java.util.concurrent.TimeUnit;
 /**
  * Runs the relay protocol for one client connection.
  *
- * A session starts unregistered. The client sends its identity and public
- * keys, then signs a fresh challenge to prove possession of its signing key;
- * the relay then issues, stores and returns a signed credential. A registered
- * connection can request other users' credentials and submit protected
- * messages, which the relay forwards to online recipients without decrypting
- * them. PING is answered with PONG at any time.
+ * A session starts unauthenticated. A new client registers: it sends its
+ * identity and public keys, then signs a fresh challenge to prove possession
+ * of its signing key, and the relay issues, stores and returns a signed
+ * credential. A returning client logs in instead: it names its identity and
+ * signs a fresh challenge, which the relay checks against the signing key
+ * stored at registration. An authenticated connection can request other
+ * users' credentials and submit protected messages, which the relay forwards
+ * to online recipients without decrypting them. PING is answered with PONG
+ * at any time.
  *
  * Each connection gets its own RelaySession object, so the session's state
  * lives in fields and each frame type has its own handler method.
@@ -41,6 +45,8 @@ public final class RelaySession {
         NEW,
         // Registration request received; waiting for its proof.
         REGISTER_PENDING,
+        // Login request received; waiting for its proof.
+        LOGIN_PENDING,
         // The client proved its identity; it may discover and send.
         AUTHENTICATED
     }
@@ -60,6 +66,10 @@ public final class RelaySession {
     // The registration in progress and its original bytes.
     private RegisterRequest pendingRegistration;
     private byte[] pendingRegistrationPayload;
+
+    // The login in progress and the signing key stored at registration.
+    private String pendingLoginIdentity;
+    private PublicKey pendingLoginKey;
 
     // The challenge in progress, timed with a monotonic clock.
     private byte[] pendingChallenge;
@@ -115,6 +125,8 @@ public final class RelaySession {
                     case PING -> handlePing(request);
                     case REGISTER_REQUEST -> handleRegisterRequest(request);
                     case REGISTER_PROOF -> handleRegisterProof(request);
+                    case LOGIN_REQUEST -> handleLoginRequest(request);
+                    case LOGIN_PROOF -> handleLoginProof(request);
                     case DISCOVER_REQUEST -> handleDiscover(request);
                     case SEND_MESSAGE -> handleSend(request);
                     default -> throw new IOException(
@@ -198,7 +210,8 @@ public final class RelaySession {
         }
 
         // Reserve the identity before returning a successful registration.
-        if (!directory.register(verifiedRegistration.identity(), credentialPayload)) {
+        if (!directory.register(verifiedRegistration.identity(), credentialPayload,
+                verifiedRegistration.signingPublicKey())) {
             clientConnection.send(new Frame(MessageType.ERROR,
                     "Identity already registered".getBytes(StandardCharsets.UTF_8)));
             open = false;
@@ -213,6 +226,62 @@ public final class RelaySession {
 
         System.out.println("[*] Issued credential for "
                 + verifiedRegistration.identity());
+    }
+
+    /**
+     * Starts a login: looks up the registered key and sends a challenge.
+     *
+     * Nothing changes in the directory here. Only a verified proof can
+     * mark this connection online (decision D8).
+     */
+    private void handleLoginRequest(Frame request) throws IOException {
+        requireState(State.NEW, "Login not allowed now");
+
+        String claimedIdentity = LoginCodec.decodeRequest(request.payload());
+
+        // Use the key stored at registration, never one sent by the client.
+        PublicKey registeredKey = directory.findSigningKey(claimedIdentity);
+        if (registeredKey == null) {
+            clientConnection.send(new Frame(MessageType.ERROR,
+                    "Unknown identity".getBytes(StandardCharsets.UTF_8)));
+            open = false;
+            return;
+        }
+
+        pendingLoginIdentity = claimedIdentity;
+        pendingLoginKey = registeredKey;
+
+        sendChallenge(MessageType.LOGIN_CHALLENGE);
+        state = State.LOGIN_PENDING;
+
+        System.out.println("[*] Login challenge for " + claimedIdentity);
+    }
+
+    /**
+     * Verifies the login proof, then marks this connection online.
+     */
+    private void handleLoginProof(Frame request) throws IOException {
+        requireState(State.LOGIN_PENDING, "No login challenge pending");
+
+        // Reconstruct the exact bytes the client must have signed.
+        byte[] proofData = LoginCodec.buildProofData(
+                pendingLoginIdentity, consumeChallenge());
+
+        try {
+            if (!Signatures.verify(proofData, request.payload(), pendingLoginKey)) {
+                throw new IOException("Invalid login proof");
+            }
+        } catch (GeneralSecurityException e) {
+            throw new IOException("Could not verify login proof", e);
+        }
+
+        String provedIdentity = pendingLoginIdentity;
+        pendingLoginIdentity = null;
+        pendingLoginKey = null;
+
+        authenticate(provedIdentity, new Frame(MessageType.LOGIN_SUCCESS, new byte[0]));
+
+        System.out.println("[*] Logged in " + provedIdentity);
     }
 
     /**
@@ -286,13 +355,21 @@ public final class RelaySession {
 
         // Publish the connection while holding its writer lock.
         // Forwarding threads must wait until the success frame has been sent.
+        ClientConnection replaced;
         synchronized (clientConnection) {
-            directory.markOnline(identity, clientConnection);
+            replaced = directory.markOnline(identity, clientConnection);
             clientConnection.send(success);
         }
 
         // Authenticated clients may remain idle while waiting for messages.
         conn.setSoTimeout(0);
+
+        // Newest login wins (decision D8). The old connection is told why,
+        // so a real owner notices if someone else logged in with their key.
+        if (replaced != null && replaced != clientConnection) {
+            replaced.close("Session replaced by a new login");
+            System.out.println("[*] Replaced previous connection for " + identity);
+        }
     }
 
     /**

@@ -1,5 +1,6 @@
 package pt.ua.si.quackchat.relay;
 
+import java.security.PublicKey;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -7,7 +8,13 @@ import java.util.concurrent.ConcurrentMap;
  * Stores registered identities and their signed credentials for this relay run.
  */
 public final class ClientDirectory {
-    private final ConcurrentMap<String, byte[]> credentials =
+    /**
+     * A registered identity: the credential returned by discovery, and the
+     * signing key that login proofs are checked against.
+     */
+    private record Entry(byte[] credential, PublicKey signingKey) {}
+
+    private final ConcurrentMap<String, Entry> entries =
             new ConcurrentHashMap<>();
 
     // Track active connections separately from stored credentials.
@@ -19,14 +26,16 @@ public final class ClientDirectory {
      *
      * @param identity the identity whose registration proof was verified
      * @param credentialPayload the relay-signed credential bytes
+     * @param signingKey the Ed25519 key certified in that credential
      * @return true if inserted, or false if the identity already exists
      */
-    public boolean register(String identity, byte[] credentialPayload) {
+    public boolean register(String identity, byte[] credentialPayload,
+                            PublicKey signingKey) {
         // Copy the array so callers cannot modify the stored credential.
-        byte[] storedCopy = credentialPayload.clone();
+        Entry entry = new Entry(credentialPayload.clone(), signingKey);
 
         // Atomically check and insert, even when sessions register concurrently.
-        return credentials.putIfAbsent(identity, storedCopy) == null;
+        return entries.putIfAbsent(identity, entry) == null;
     }
 
     /**
@@ -36,17 +45,30 @@ public final class ClientDirectory {
      * @return a copy of the credential, or null if no entry exists
      */
     public byte[] find(String identity) {
-        byte[] credentialPayload = credentials.get(identity);
+        Entry entry = entries.get(identity);
 
         // Keep the directory's internal array private.
-        return credentialPayload == null ? null : credentialPayload.clone();
+        return entry == null ? null : entry.credential().clone();
     }
 
     /**
-     * Associates a successfully registered identity with its live connection.
+     * Finds the signing key stored at registration, for verifying logins.
+     *
+     * @param identity the identity to find
+     * @return the registered Ed25519 public key, or null if unknown
      */
-    public void markOnline(String identity, ClientConnection connection) {
-        online.put(identity, connection);
+    public PublicKey findSigningKey(String identity) {
+        Entry entry = entries.get(identity);
+        return entry == null ? null : entry.signingKey();
+    }
+
+    /**
+     * Associates an authenticated identity with its live connection.
+     *
+     * @return the connection this one replaces, or null if there was none
+     */
+    public ClientConnection markOnline(String identity, ClientConnection connection) {
+        return online.put(identity, connection);
     }
 
     /**
