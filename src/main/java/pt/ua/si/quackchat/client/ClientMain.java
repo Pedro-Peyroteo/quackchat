@@ -114,7 +114,7 @@ public class ClientMain {
                 // Validate the response type and the fixed challenge length.
                 if (response.type() != MessageType.REGISTER_CHALLENGE
                         || response.payload().length
-                        != ProtocolConfig.REGISTRATION_CHALLENGE_BYTES) {
+                        != ProtocolConfig.CHALLENGE_BYTES) {
                     throw new IOException("Expected a registration challenge");
                 }
 

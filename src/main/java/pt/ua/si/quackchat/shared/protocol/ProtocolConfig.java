@@ -12,11 +12,11 @@ public final class ProtocolConfig {
     public static final int MAX_CLIENT_WORKERS = 8;         //  limit of 8 client sections in relay
     public static final int MAX_QUEUED_CLIENTS = 64;        //  limit of 64 connections waiting for a worker
 
-    // Number of random bytes in a registration challenge.
-    public static final int REGISTRATION_CHALLENGE_BYTES = 32;
+    // Number of random bytes in a registration or login challenge.
+    public static final int CHALLENGE_BYTES = 32;
 
-    // Maximum age of a registration challenge when its proof is received.
-    public static final int REGISTRATION_CHALLENGE_TIMEOUT_MILLIS = 30_000;
+    // Maximum age of a challenge when its proof is received.
+    public static final int CHALLENGE_TIMEOUT_MILLIS = 30_000;
 
     private ProtocolConfig() {}
 }

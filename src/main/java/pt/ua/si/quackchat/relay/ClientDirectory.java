@@ -58,9 +58,11 @@ public final class ClientDirectory {
 
     /**
      * Removes this connection without deleting the registered credential.
+     *
+     * @return true if this connection was the identity's online connection
      */
-    public void markOffline(String identity, ClientConnection connection) {
+    public boolean markOffline(String identity, ClientConnection connection) {
         // Remove only if this exact connection is still associated with the identity.
-        online.remove(identity, connection);
+        return online.remove(identity, connection);
     }
 }

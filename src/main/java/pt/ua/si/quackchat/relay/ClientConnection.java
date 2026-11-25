@@ -2,18 +2,23 @@ package pt.ua.si.quackchat.relay;
 
 import pt.ua.si.quackchat.shared.protocol.Frame;
 import pt.ua.si.quackchat.shared.protocol.FrameCodec;
+import pt.ua.si.quackchat.shared.protocol.MessageType;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Serializes complete outgoing frames for one client connection.
  */
 public final class ClientConnection {
+    private final Socket socket;
     private final DataOutputStream out;
     private boolean failed;
 
-    public ClientConnection(DataOutputStream out) {
+    public ClientConnection(Socket socket, DataOutputStream out) {
+        this.socket = socket;
         this.out = out;
     }
 
@@ -37,6 +42,28 @@ public final class ClientConnection {
             // A partial write may have damaged framing; stop using this writer.
             failed = true;
             throw e;
+        }
+    }
+
+    /**
+     * Tells the client why the connection is ending, then closes it.
+     *
+     * Called from another session's thread. Closing the socket makes this
+     * connection's own reading thread stop with a SocketException.
+     *
+     * @param reason the error text sent to the client
+     */
+    public void close(String reason) {
+        try {
+            send(new Frame(MessageType.ERROR, reason.getBytes(StandardCharsets.UTF_8)));
+        } catch (IOException e) {
+            // The client may already be gone; closing is all that is left.
+        }
+
+        try {
+            socket.close();
+        } catch (IOException e) {
+            // Nothing useful to do if closing fails.
         }
     }
 }

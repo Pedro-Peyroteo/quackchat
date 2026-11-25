@@ -119,7 +119,7 @@ public class RegistrationCodec {
      */
     public static byte[] buildProofData(byte[] requestPayload, byte[] challenge) throws IOException {
         // Require the exact challenge length defined by the protocol.
-        if (challenge == null || challenge.length != ProtocolConfig.REGISTRATION_CHALLENGE_BYTES) {
+        if (challenge == null || challenge.length != ProtocolConfig.CHALLENGE_BYTES) {
             throw new IOException("Invalid registration challenge length");
         }
 
@@ -134,7 +134,7 @@ public class RegistrationCodec {
             Fields.write(out, requestPayload, MAX_REQUEST_BYTES);
 
             // Bind the proof to this registration attempt.
-            Fields.write(out, challenge, ProtocolConfig.REGISTRATION_CHALLENGE_BYTES);
+            Fields.write(out, challenge, ProtocolConfig.CHALLENGE_BYTES);
         }
 
         return buffer.toByteArray();
