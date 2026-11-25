@@ -29,49 +29,6 @@ public class RegistrationCodec {
     private RegistrationCodec() {}
 
     /**
-     * Writes a byte array preceded by its length.
-     *
-     * @param out the destination stream
-     * @param value the bytes to write
-     * @param maxLength the maximum permitted number of bytes
-     * @throws IOException if the field is invalid or writing fails
-     */
-    private static void writeBytes(DataOutputStream out, byte[] value, int maxLength) throws IOException {
-        // Reject missing, empty or oversized fields.
-        if (value == null || value.length == 0 || value.length > maxLength) {
-            throw new IOException("Invalid registration field length.");
-        }
-
-        // Write the number of bytes, followed by the bytes themselves.
-        // I.e.: [identity length][identity bytes]
-        out.writeInt(value.length);
-        out.write(value);
-    }
-
-    /**
-     * Reads a byte array preceded by its length.
-     *
-     * @param in the source stream
-     * @param maxLength the maximum permitted number of bytes
-     * @return the field's bytes
-     * @throws IOException if the length is invalid or data is incomplete
-     */
-    private static byte[] readBytes(DataInputStream in, int maxLength) throws IOException {
-        // Read and validate the length before allocating an array.
-        int length = in.readInt();
-
-        if (length <= 0 || length > maxLength) {
-            throw new IOException("Invalid registration field length");
-        }
-
-        // Read every byte belonging to this field.
-        byte[] value = new byte[length];
-        in.readFully(value);
-
-        return value;
-    }
-
-    /**
      * Encodes a registration request as a frame payload.
      *
      * @param request the identity and public keys to encode
@@ -94,13 +51,13 @@ public class RegistrationCodec {
 
         try (DataOutputStream out = new DataOutputStream(buffer)) {
             // Write the identity first.
-            writeBytes(out, identityBytes, MAX_IDENTITY_BYTES);
+            Fields.write(out, identityBytes, MAX_IDENTITY_BYTES);
 
             // Write the Ed25519 public key second.
-            writeBytes(out, signingKeyBytes, MAX_PUBLIC_KEY_BYTES);
+            Fields.write(out, signingKeyBytes, MAX_PUBLIC_KEY_BYTES);
 
             // Write the RSA public key third.
-            writeBytes(out, encryptionKeyBytes, MAX_PUBLIC_KEY_BYTES);
+            Fields.write(out, encryptionKeyBytes, MAX_PUBLIC_KEY_BYTES);
         }
 
         // Return the completed payload for FrameCodec to send.
@@ -119,7 +76,7 @@ public class RegistrationCodec {
         try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(payload))) {
 
             // Read the identity and enforce the same rules as the encoder.
-            byte[] identBytes = readBytes(in, MAX_IDENTITY_BYTES);
+            byte[] identBytes = Fields.read(in, MAX_IDENTITY_BYTES);
             String identity = new String(identBytes, StandardCharsets.UTF_8);
 
             if (!identity.matches("[A-Za-z0-9_-]+")) {
@@ -127,8 +84,8 @@ public class RegistrationCodec {
             }
 
             // Read the public keys in the order defined by the encoder.
-            byte[] signingKeyBytes = readBytes(in, MAX_PUBLIC_KEY_BYTES);
-            byte[] encryptionKeyBytes = readBytes(in, MAX_PUBLIC_KEY_BYTES);
+            byte[] signingKeyBytes = Fields.read(in, MAX_PUBLIC_KEY_BYTES);
+            byte[] encryptionKeyBytes = Fields.read(in, MAX_PUBLIC_KEY_BYTES);
 
             // Reject additional bytes behond the three defined fields.
             if (in.read() != -1) {
@@ -171,13 +128,13 @@ public class RegistrationCodec {
 
         try (DataOutputStream out = new DataOutputStream(buffer)) {
             // Bind the signature to this protocol operation and version.
-            writeBytes(out, PROOF_CONTEXT, PROOF_CONTEXT.length);
+            Fields.write(out, PROOF_CONTEXT, PROOF_CONTEXT.length);
 
             // Include the exact request bytes containing the identity and both keys.
-            writeBytes(out, requestPayload, MAX_REQUEST_BYTES);
+            Fields.write(out, requestPayload, MAX_REQUEST_BYTES);
 
             // Bind the proof to this registration attempt.
-            writeBytes(out, challenge, ProtocolConfig.REGISTRATION_CHALLENGE_BYTES);
+            Fields.write(out, challenge, ProtocolConfig.REGISTRATION_CHALLENGE_BYTES);
         }
 
         return buffer.toByteArray();

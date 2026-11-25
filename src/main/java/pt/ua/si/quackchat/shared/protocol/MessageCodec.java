@@ -96,10 +96,11 @@ public final class MessageCodec {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         try (DataOutputStream out = new DataOutputStream(buffer)) {
             out.write(headerBytes);
-            writeField(out, senderCredential);
+            Fields.write(out, senderCredential, CredentialCodec.MAX_PAYLOAD_BYTES);
             out.write(nonce);
             out.write(wrappedKey);
-            writeField(out, ciphertext);
+            Fields.write(out, ciphertext,
+                    MAX_PLAINTEXT_BYTES + MessageEncryption.TAG_BYTES);
         }
 
         // Sign the complete encoded envelope before appending its signature.
@@ -171,7 +172,7 @@ public final class MessageCodec {
             }
 
             // Parse bounded fields before using their contents.
-            byte[] senderCredential = readField(
+            byte[] senderCredential = Fields.read(
                     in, CredentialCodec.MAX_PAYLOAD_BYTES);
 
             // Read the fixed 12-byte nonce used to initialize AES-GCM.
@@ -183,7 +184,7 @@ public final class MessageCodec {
             in.readFully(wrappedKey);
 
             // Read the length-prefixed ciphertext, including its appended GCM tag.
-            byte[] ciphertext = readField(
+            byte[] ciphertext = Fields.read(
                     in, MAX_PLAINTEXT_BYTES + MessageEncryption.TAG_BYTES);
 
             if (ciphertext.length < MessageEncryption.TAG_BYTES) {
@@ -233,8 +234,10 @@ public final class MessageCodec {
             out.writeLong(header.messageId().getLeastSignificantBits());
 
             // Reuse the identity rules already enforced by discovery.
-            writeField(out, DiscoveryCodec.encodeRequest(header.sender()));
-            writeField(out, DiscoveryCodec.encodeRequest(header.recipient()));
+            Fields.write(out, DiscoveryCodec.encodeRequest(header.sender()),
+                    RegistrationCodec.MAX_IDENTITY_BYTES);
+            Fields.write(out, DiscoveryCodec.encodeRequest(header.recipient()),
+                    RegistrationCodec.MAX_IDENTITY_BYTES);
         }
 
         return buffer.toByteArray();
@@ -254,35 +257,11 @@ public final class MessageCodec {
         UUID messageId = new UUID(in.readLong(), in.readLong());
 
         String sender = DiscoveryCodec.decodeRequest(
-                readField(in, RegistrationCodec.MAX_IDENTITY_BYTES));
+                Fields.read(in, RegistrationCodec.MAX_IDENTITY_BYTES));
         String recipient = DiscoveryCodec.decodeRequest(
-                readField(in, RegistrationCodec.MAX_IDENTITY_BYTES));
+                Fields.read(in, RegistrationCodec.MAX_IDENTITY_BYTES));
 
         return new Header(messageId, sender, recipient);
-    }
-
-    /**
-     * Writes a field preceded by its byte length.
-     */
-    private static void writeField(DataOutputStream out, byte[] value)
-            throws IOException {
-        out.writeInt(value.length);
-        out.write(value);
-    }
-
-    /**
-     * Reads a bounded field, validating its length before allocation.
-     */
-    private static byte[] readField(DataInputStream in, int maximum)
-            throws IOException {
-        int length = in.readInt();
-        if (length <= 0 || length > maximum) {
-            throw new IOException("Invalid message field length");
-        }
-
-        byte[] value = new byte[length];
-        in.readFully(value);
-        return value;
     }
 
     /**
