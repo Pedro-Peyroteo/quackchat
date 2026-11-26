@@ -97,6 +97,8 @@ public final class RelayServer implements AutoCloseable {
         try (Socket connection = client) {
             System.out.println("[*] Client connected: " + connection.getRemoteSocketAddress());
             RelaySession.handle(connection, relaySigningKey, directory);
+            // Reached only when the session ended without an exception.
+            System.out.println("[*] Client disconnected: " + connection.getRemoteSocketAddress());
         } catch (SocketException e) {
             // Report a socket-level disconnect while preserving its cause.
             System.out.println("[*] Client connection ended: " + e.getMessage());

@@ -245,6 +245,8 @@ public final class RelaySession {
             clientConnection.send(new Frame(MessageType.ERROR,
                     "Unknown identity".getBytes(StandardCharsets.UTF_8)));
             open = false;
+            System.out.println("[!] Login rejected: unknown identity " + claimedIdentity
+                    + " (" + conn.getRemoteSocketAddress() + ")");
             return;
         }
 
